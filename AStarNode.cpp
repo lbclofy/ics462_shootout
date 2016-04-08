@@ -43,9 +43,7 @@ AStarNode::AStarNode(int xi, int yi)
 }
 int GraphFunctionContainer::getHashBin(AStarNode& n)
 {
-	//int index = (abs(n.getX() - Xmin) * abs(Ymax - Ymin) + abs(n.getY() - Ymin)) % 1024;
-	int index = abs(n.getX() * n.getY()) % 1024;
-	return index;
+	return ((n.getY() + abs(Ymin) + 1) * ((abs(Xmin) * 2) + 1)) + (n.getX() + abs(Xmin) + 1);
 }
 
 // returns true if the location (x, y) is inside the world boundaries and not in a building

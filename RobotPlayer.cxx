@@ -1109,8 +1109,8 @@ void		RobotPlayer::aStarSearch(const float startPos[3], const float goalPos[3],
 	GraphFunctionContainer fun_cont(BZDBCache::worldSize);
 	AStarGraph.func_container = &fun_cont;
 	// Set other variables
-	AStarGraph.hashTableSize = 1024; // Since in this problem, "getHashBin" can return a max of value 1024.
-	AStarGraph.hashBinSizeIncreaseStep = 256; // By default it's 128. For this problem, we choose a higher value. 
+	AStarGraph.hashTableSize = (int)pow((floor(GraphFunctionContainer::Xmin * 2) - 2), 2) + 2; //amount of Nodes in graph plus a bit of wiggle room; 
+	AStarGraph.hashBinSizeIncreaseStep = 1; //hash function guarantees unique values
 	AStarGraph.SeedNode = AStarNode(startPos); // Start node
 	AStarGraph.TargetNode = AStarNode(goalPos); // Goal node
 	A_star_planner<AStarNode,double> planner;
