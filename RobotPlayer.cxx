@@ -303,7 +303,7 @@ void			RobotPlayer::followPath(float dt)
       distance = hypotf(path[0], path[1]);
       float tankRadius = BZDBCache::tankRadius;
 	  // find how long it will take to get to next path segment
-	  if (distance <= 1.0f * BZDBCache::tankRadius)
+	  if (distance <= dt * tankSpeed + 1.0f * BZDBCache::tankRadius)
 		  pathIndex--; 
 
 	  float cohesion[3];
