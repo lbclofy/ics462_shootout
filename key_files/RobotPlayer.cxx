@@ -303,7 +303,7 @@ void			RobotPlayer::followPath(float dt)
       distance = hypotf(path[0], path[1]);
       float tankRadius = BZDBCache::tankRadius;
 	  // find how long it will take to get to next path segment
-	  if (distance <= dt * tankSpeed + 2.0f * BZDBCache::tankRadius)
+	  if (distance <= 1.0f * BZDBCache::tankRadius)
 		  pathIndex--; 
 
 	  float cohesion[3];
@@ -1125,6 +1125,9 @@ void		RobotPlayer::aStarSearch(const float startPos[3], const float goalPos[3],
 			getTeam(), getId(), startPos[0], startPos[1], goalPos[0], goalPos[1]);
 		controlPanel->addMessage(buffer);
 	}
+	else {
+		paths[0] = generateSmoothedPath(paths[0]);
+	}
 #ifdef TRACE_PLANNER
 	  char buffer[128];
 	  sprintf (buffer, "R%d-%d planning from (%f, %f) to (%f, %f) with plan size %d",
@@ -1136,6 +1139,47 @@ void		RobotPlayer::aStarSearch(const float startPos[3], const float goalPos[3],
 	  }
 	  controlPanel->addMessage(" ]\n\n");
 #endif
+}
+
+std::vector< AStarNode > RobotPlayer::generateSmoothedPath(std::vector< AStarNode > original) {
+	std::vector< AStarNode > smoothed;
+	std::reverse(original.begin(), original.end());
+	for (int i = 0; i < original.size(); i++) {
+		int until; //final node before the node can be reached in a straight line.
+		until = i + 1;
+		for (int i2 = (i + 1); i2 < original.size(); i2++) {
+			until = i2;
+			if (!pathIsClear(original[i], original[i2])) {
+				break;
+			}
+		}
+		smoothed.push_back(original[i]);
+		i = until - 1; //skip to next node in new path. Ignore all nodes in between
+	}
+	//smoothed.push_back(original[original.size() - 1]);
+	std::reverse(smoothed.begin(), smoothed.end());
+	return smoothed;
+}
+
+bool		RobotPlayer::pathIsClear(AStarNode& start, AStarNode& end) {
+	float startCoordinates[3] = { start.getScaledX(), start.getScaledY(), 0 };
+	float endCoordinates[3] = { end.getScaledX(), end.getScaledY(), 0 };
+	float direction[3] = { endCoordinates[0] - startCoordinates[0], endCoordinates[1] - startCoordinates[1], endCoordinates[2] - startCoordinates[2] };
+	float length = hypotf(direction[0], direction[1]);
+	float unitDirection[3] = { direction[0] / length, direction[1] / length, direction[2] };
+	float perpendicular1[3] = { unitDirection[1], unitDirection[0] * -1.0f, unitDirection[2] }; //vectors perpendicular to vector from start node to end node
+	float perpendicular2[3] = { unitDirection[1] * -1.0f, unitDirection[0], unitDirection[2] };
+	float startSide1[3] = { startCoordinates[0] + (perpendicular1[0] * SCALE / 2), startCoordinates[1] + (perpendicular1[1] * SCALE / 2), startCoordinates[2] };
+	float startSide2[3] = { startCoordinates[0] + (perpendicular2[0] * SCALE / 2), startCoordinates[1] + (perpendicular2[1] * SCALE / 2), startCoordinates[2] };
+	float maxdistance = TargetingUtils::getTargetDistance(startCoordinates, endCoordinates);
+
+	Ray tankRay(startCoordinates, unitDirection);
+	Ray tankSideRay1(startSide1, unitDirection);
+	Ray tankSideRay2(startSide2, unitDirection);
+
+	return ShotStrategy::getFirstBuilding(tankRay, -0.5f, maxdistance) == NULL //true if none of the three rays hit any buildings
+		&& ShotStrategy::getFirstBuilding(tankSideRay1, -0.5f, maxdistance) == NULL
+		&& ShotStrategy::getFirstBuilding(tankSideRay2, -0.5f, maxdistance) == NULL;
 }
 
 // Local Variables: ***
