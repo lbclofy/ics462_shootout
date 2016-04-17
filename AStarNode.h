@@ -10,6 +10,8 @@
 #include "BZDBCache.h"
 
 #define SCALE	BZDBCache::tankRadius
+#define RETURNING 0
+
 // A node of the A* search graph
 class AStarNode
 {
@@ -21,10 +23,10 @@ public:
 	AStarNode(const float location[3]);
 	AStarNode(int xi, int yi);
 	static bool isAccessible(int x, int y);
-inline int AStarNode::getX(void) const { return x; }
-inline int AStarNode::getY(void) const { return y; }
-inline void AStarNode::setX(int newX) { x = newX; }
-inline void AStarNode::setY(int newY) { y = newY; }
+	inline int AStarNode::getX(void) const { return x; }
+	inline int AStarNode::getY(void) const { return y; }
+	inline void AStarNode::setX(int newX) { x = newX; }
+	inline void AStarNode::setY(int newY) { y = newY; }
 	inline float AStarNode::getScaledX(void) const { return x * SCALE; }
 	inline float AStarNode::getScaledY(void) const { return y * SCALE; }
 private:
@@ -49,16 +51,24 @@ public:
 
 	double getHeuristics(AStarNode& n1, AStarNode& n2);
 
+	static int convertCoordinate(float c);
+
 	// -------------------------------
 	// constructors
-	GraphFunctionContainer (float worldSize);
+	GraphFunctionContainer (float worldSize, int currentStatus, Player* player);
 
 	static int Xmin, Xmax, Ymin, Ymax; // world size
 
 private:
 
-	// fixed transition costs vector
-	std::vector<double> ConstCostVector;
+	void generateCost();
+	double badFlagInfluence(std::vector<Flag*> flagList, AStarNode n);
+	double enemyInfluence(std::vector<Player*> enemyList, AStarNode n, float maxAOI, float minAOI);
+	double coverInfluence(std::vector<Player*> enemyList, AStarNode n);
+	float trueAngle(float angle);
+
+	int currentStatus;
+	Player* player;
 
 
 

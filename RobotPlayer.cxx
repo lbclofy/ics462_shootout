@@ -18,7 +18,7 @@
 //#define TRACE2
 //#define TRACE3
 //#define TRACE_PLANNER
-#define TRACE_DECTREE
+//#define TRACE_DECTREE
 
 // interface header
 #include "RobotPlayer.h"
@@ -1106,7 +1106,7 @@ void		RobotPlayer::aStarSearch(const float startPos[3], const float goalPos[3],
 {
 	// Profiling observation: Using int instead of double cost provides marginal improvement (~10%)
 	GenericSearchGraphDescriptor<AStarNode,double> AStarGraph;
-	GraphFunctionContainer fun_cont(BZDBCache::worldSize);
+	GraphFunctionContainer fun_cont(BZDBCache::worldSize, RETURNING, LocalPlayer::getMyTank());
 	AStarGraph.func_container = &fun_cont;
 	// Set other variables
 	AStarGraph.hashTableSize = (int)pow((floor(GraphFunctionContainer::Xmin * 2) - 2), 2) + 2; //amount of Nodes in graph plus a bit of wiggle room; 
