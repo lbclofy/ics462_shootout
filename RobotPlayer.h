@@ -60,6 +60,9 @@ class RobotPlayer : public LocalPlayer {
 	bool		RobotPlayer::isTeammateInWay(float dt);
 	void		RobotPlayer::setShortShotTimer(float dt);
 	void		RobotPlayer::shootAndResetShotTimer(float dt);
+	void		RobotPlayer::rotateShootAndResetShotTimer(float dt);
+
+	bool isTargetClose(float dt);
 
 	bool		RobotPlayer::isHoldingFlag(float dt);
 	bool		RobotPlayer::isFlagSticky(float dt);

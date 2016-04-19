@@ -501,6 +501,48 @@ void			RobotPlayer::shootAndResetShotTimer(float dt)
 }
 
 /*
+* Checks to see if the closest tank is within a radius
+*/
+bool		RobotPlayer::isTargetClose(float dt) {
+	const float dist = TargetingUtils::getTargetDistance(getPosition(), target->getPosition() );
+	return fabs(dist) < BZDBCache::tankRadius * 20;
+}
+
+void		RobotPlayer::rotateShootAndResetShotTimer(float dt) {
+
+	float tankRadius = BZDBCache::tankRadius;
+	const float shotRadius = BZDB.eval(StateDatabase::BZDB_SHOTRADIUS);
+	float tankAngVel = BZDB.eval(StateDatabase::BZDB_TANKANGVEL);
+	const float* targetPos = target->getPosition();
+	const float azimuth = getAngle();
+	const float* currPos = getPosition();
+	float shootingAngle = atan2f(targetPos[1] - currPos[1], targetPos[0] - currPos[0]);
+	if (shootingAngle < 0.0f)
+		shootingAngle += (float)(2.0 * M_PI);
+	float azimuthDiff = shootingAngle - azimuth;
+	if (azimuthDiff > M_PI)
+		azimuthDiff -= (float)(2.0 * M_PI);
+	else
+		if (azimuthDiff < -M_PI)
+			azimuthDiff += (float)(2.0 * M_PI);
+	if (0.0f < fabs(azimuthDiff)) {
+		if (azimuthDiff >= dt * tankAngVel) {
+			setDesiredAngVel(1.0f);
+		}
+		else if (azimuthDiff <= -dt * tankAngVel) {
+			setDesiredAngVel(-1.0f);
+		}
+		else {
+			setDesiredAngVel(azimuthDiff / dt / tankAngVel);
+		}
+	}
+		
+	char buffer[128];
+	sprintf(buffer, "Need to Rotate to get shot off");
+	controlPanel->addMessage(buffer);
+}
+
+/*
  * is the robot tank holding a flag?
  */
 bool		RobotPlayer::isHoldingFlag(float dt)

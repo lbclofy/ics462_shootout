@@ -96,22 +96,39 @@ namespace aicore
 		doUpdateShootingDecisions[2].decFuncPtr = &RobotPlayer::hasShotTimerElapsed;
 		doUpdateShootingDecisions[2].trueBranch = &doUpdateShootingDecisions[3];
 		doUpdateShootingDecisions[2].falseBranch = &doUpdateShootingActions[0];
+
+		doUpdateShootingDecisions[3].decFuncPtr = &RobotPlayer::isTargetClose;
+		doUpdateShootingDecisions[3].trueBranch = &doUpdateShootingDecisions[7];
+		doUpdateShootingDecisions[3].falseBranch = &doUpdateShootingActions[4];
 		
-		doUpdateShootingDecisions[3].decFuncPtr = &RobotPlayer::isShotCloseToTarget;
-		doUpdateShootingDecisions[3].trueBranch = &doUpdateShootingDecisions[4];
-		doUpdateShootingDecisions[3].falseBranch = &doUpdateShootingActions[0];
+		doUpdateShootingDecisions[4].decFuncPtr = &RobotPlayer::isShotCloseToTarget;
+		doUpdateShootingDecisions[4].trueBranch = &doUpdateShootingDecisions[5];
+		doUpdateShootingDecisions[4].falseBranch = &doUpdateShootingActions[0];
 		
-		doUpdateShootingDecisions[4].decFuncPtr = &RobotPlayer::isBuildingInWay;
-		doUpdateShootingDecisions[4].trueBranch = &doUpdateShootingActions[0];
-		doUpdateShootingDecisions[4].falseBranch = &doUpdateShootingDecisions[5];
+		doUpdateShootingDecisions[5].decFuncPtr = &RobotPlayer::isBuildingInWay;
+		doUpdateShootingDecisions[5].trueBranch = &doUpdateShootingActions[0];
+		doUpdateShootingDecisions[5].falseBranch = &doUpdateShootingDecisions[6];
 		
-		doUpdateShootingDecisions[5].decFuncPtr = &RobotPlayer::isTeammateInWay;
-		doUpdateShootingDecisions[5].trueBranch = &doUpdateShootingActions[1];
-		doUpdateShootingDecisions[5].falseBranch = &doUpdateShootingActions[2];
+		doUpdateShootingDecisions[6].decFuncPtr = &RobotPlayer::isTeammateInWay;
+		doUpdateShootingDecisions[6].trueBranch = &doUpdateShootingActions[1];
+		doUpdateShootingDecisions[6].falseBranch = &doUpdateShootingActions[2];
+
+		doUpdateShootingDecisions[7].decFuncPtr = &RobotPlayer::isShotCloseToTarget;
+		doUpdateShootingDecisions[7].trueBranch = &doUpdateShootingDecisions[5];
+		doUpdateShootingDecisions[7].falseBranch = &doUpdateShootingDecisions[8];
+
+		doUpdateShootingDecisions[8].decFuncPtr = &RobotPlayer::isBuildingInWay;
+		doUpdateShootingDecisions[8].trueBranch = &doUpdateShootingActions[0];
+		doUpdateShootingDecisions[8].falseBranch = &doUpdateShootingDecisions[9];
+
+		doUpdateShootingDecisions[9].decFuncPtr = &RobotPlayer::isTeammateInWay;
+		doUpdateShootingDecisions[9].trueBranch = &doUpdateShootingActions[1];
+		doUpdateShootingDecisions[9].falseBranch = &doUpdateShootingActions[3];
 
 		doUpdateShootingActions[0].actFuncPtr = &RobotPlayer::doNothing;
 		doUpdateShootingActions[1].actFuncPtr = &RobotPlayer::setShortShotTimer;
 		doUpdateShootingActions[2].actFuncPtr = &RobotPlayer::shootAndResetShotTimer;
+		doUpdateShootingActions[3].actFuncPtr = &RobotPlayer::rotateShootAndResetShotTimer;
 		
 		// decision tree for doUpdate, dropping flags
 		doUpdateDropFlagDecisions[0].decFuncPtr = &RobotPlayer::amAlive;
@@ -140,8 +157,8 @@ namespace aicore
 
 	DecisionPtr DecisionTrees::doUpdateMotionDecisions[2];
 	ActionPtr DecisionTrees::doUpdateMotionActions[3];
-	DecisionPtr DecisionTrees::doUpdateShootingDecisions[6];
-	ActionPtr DecisionTrees::doUpdateShootingActions[3];
+	DecisionPtr DecisionTrees::doUpdateShootingDecisions[10];
+	ActionPtr DecisionTrees::doUpdateShootingActions[4];
 	DecisionPtr DecisionTrees::doUpdateDropFlagDecisions[5];
 	ActionPtr DecisionTrees::doUpdateDropFlagActions[2];
 
