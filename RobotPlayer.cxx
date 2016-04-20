@@ -1054,6 +1054,32 @@ void		RobotPlayer::findHomeBase(TeamColor teamColor, float location[3])
 }
 
 /*
+ * Return search radius for patrolling tank based on base location.
+ * This code assumes the team base is to the far left middle on the map.
+ * Radius in this case is 3 points: North, South, and East of the base at a third of the world size.
+ */
+void RobotPlayer::findPatrolArea(TeamColor teamColor, float patrolArea[3]) {
+	//if worldSize does not reflect true size i.e. 500 is 1000x1000 then change to *2/3
+	float patrolRadius = (BZDBCache::worldSize)/3;
+	findHomeBase(teamColor, patrolArea);
+	//assuming location[0] is horizontal movement and location[1] is vertical from top-down view
+	patrolArea[0] = patrolArea[0] + patrolRadius; //horizontal to the right
+	patrolArea[1] = patrolArea[1] + patrolRadius; //vertical up
+	patrolArea[2] = patrolArea[1] - patrolRadius; //vertical down
+}
+
+/*
+ * Given patrolArea after calling findPatrolArea, returns a random point in the area.
+ */
+float* RobotPlayer::findPatrolPoint(float patrolArea[3]) {
+	float patrolPoint[2];
+	patrolPoint[0] = ((float(rand()) / patrolArea[0]) * (patrolArea[0] - (BZDBCache::worldSize)/3)) + (BZDBCache::worldSize)/3;
+	patrolPoint[1] = ((float(rand()) / patrolArea[1]) * (patrolArea[1] - patrolArea[2])) + patrolArea[2];
+
+	return patrolPoint;
+}
+
+/*
  * Return true if any player on my team
  * is holding an opponent team flag, and false otherwise
  */

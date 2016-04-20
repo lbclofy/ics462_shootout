@@ -90,6 +90,8 @@ class RobotPlayer : public LocalPlayer {
 	 int		RobotPlayer::computeAlign(float neighborhoodSize,
 									  float avV[3], float* avAzimuth);
 	 void		RobotPlayer::findHomeBase(TeamColor teamColor, float location[3]);
+	 void RobotPlayer::findPatrolArea(TeamColor teamColor, float patrolArea[3]);
+	 float* RobotPlayer::findPatrolPoint(float patrolArea[3]);
 	 bool		RobotPlayer::myTeamHoldingOpponentFlag(void);
 	 void		RobotPlayer::findOpponentFlag(float location[3]);
 	 Player*		RobotPlayer::lookupLocalPlayer(PlayerId id);
