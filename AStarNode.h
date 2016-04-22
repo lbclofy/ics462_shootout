@@ -8,9 +8,13 @@
 #include "planners/A_star.h"
 
 #include "BZDBCache.h"
+#include <unordered_map>
 
 #define SCALE	BZDBCache::tankRadius
-#define RETURNING 0
+#define OFFENSE 0
+#define PATROL 1
+#define PURSUIT 2
+#define RETURNING 3
 
 // A node of the A* search graph
 class AStarNode
@@ -64,11 +68,13 @@ private:
 	void generateCost();
 	double badFlagInfluence(std::vector<Flag*> flagList, AStarNode n);
 	double enemyInfluence(std::vector<Player*> enemyList, AStarNode n, float maxAOI, float minAOI);
-	double coverInfluence(std::vector<Player*> enemyList, AStarNode n);
+	double coverInfluence(AStarNode n);
 	float trueAngle(float angle);
+	double calculateCover(AStarNode n);
 
 	int currentStatus;
 	Player* player;
+	static std::unordered_map <int, double> coverValues;
 
 
 

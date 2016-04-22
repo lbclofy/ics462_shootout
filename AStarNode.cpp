@@ -5,6 +5,8 @@
 #include "World.h"
 #include "playing.h" // needed for controlPanel
 
+//#define BAD_FLAG_TRACE
+
 int GraphFunctionContainer::Xmin, GraphFunctionContainer::Xmax;
 int GraphFunctionContainer::Ymin, GraphFunctionContainer::Ymax;
 
@@ -112,11 +114,11 @@ void GraphFunctionContainer::getSuccessors(AStarNode& n, std::vector<AStarNode>*
 			s->push_back(tn);
 
 			double cost = hypotf(a, b);
-			cost *= badFlagInfluence(nearbyFlags, tn);
-			if (currentStatus == RETURNING) {
+			if(player->getFlag() != NULL && player->getFlag() != Flags::Null && (player->getFlag()->flagTeam != NoTeam || player->getFlag()->flagQuality == FlagGood))
+				cost *= badFlagInfluence(nearbyFlags, tn);
+			if (currentStatus == RETURNING) 
 				cost *= enemyInfluence(nearbyEnemies, tn, maxAreaOfInfluence, minAreaOfInfluence);
-				cost *= coverInfluence(nearbyEnemies, tn);
-			}
+			cost *= coverInfluence(tn);
 			costVector.push_back(cost);
 		}
 	*c = costVector; // Using the fixed cost vector
@@ -132,7 +134,12 @@ double GraphFunctionContainer::badFlagInfluence(std::vector<Flag*> flagList, ASt
 	for (Flag* flag : flagList) {
 		double distance = hypotf(convertCoordinate(flag->position[0]) - n.getX(), convertCoordinate(flag->position[1]) - n.getY());
 		if ( distance <= 2.0) {
-			multiplier += 1.0 / (distance + 1.0);
+			multiplier += 5.0 / (distance + 1.0);
+#ifdef BAD_FLAG_TRACE
+			char buffer[128];
+			sprintf(buffer, "Bad Flag Found at (%f, %f), multiplier is now at %d", n.getScaledX, n.getScaledY, multiplier);
+			controlPanel->addMessage(buffer);
+#endif
 		}
 	}
 	return multiplier;
@@ -158,21 +165,50 @@ double GraphFunctionContainer::enemyInfluence(std::vector<Player*> enemyList, AS
 			float enemyAngle = enemy->getAngle();
 			float angleMin = trueAngle(enemyAngle - M_PI / 16.0);
 			if (trueAngle(angleFrom - angleMin) <= M_PI / 8.0) { // if position is in front of enemy tank (45 degree angle)
-				multiplier += 2.0 / (distance + 1.0);
+				multiplier += (maxAOI / 4.0) / (distance + 1.0);
 			}
 		}
 	}
 	return multiplier;
 }
 
+/**
+Convert angle to equivalent value between 0.0 and 6.28
+*/
 float GraphFunctionContainer::trueAngle(float angle) {
-	if (angle < -1.0f * M_PI) return angle + (float)(2.0 * M_PI);
-	if (angle > 1.0f * M_PI) return angle - (float)(2.0 * M_PI);
+	if (angle < 0.0f) return angle + (float)(2.0 * M_PI);
+	if (angle > 2.0f * M_PI) return angle - (float)(2.0 * M_PI);
 	return angle;
 }
 
-double GraphFunctionContainer::coverInfluence(std::vector<Player*> enemyList, AStarNode n) {
-	double multiplier = 1.0;
+/**
+Calculates the cover value for a specific node.
+All calculated values are stored permanently into a hash map.
+Values are calculated when needed and are readily available if called a second time.
+*/
+double GraphFunctionContainer::coverInfluence(AStarNode n) {
+	if (coverValues[getHashBin(n)] == 0.0)
+		coverValues[getHashBin(n)] = calculateCover(n);
+	return coverValues[getHashBin(n)];
+}
+
+/**
+Calculates the relative cover a position provides.
+Values can range from 0.5 for safe cover to 1.5 for wide open areas.
+*/
+double GraphFunctionContainer::calculateCover(AStarNode n) {
+	double multiplier = 1.5f;
+	float distanceChecked = SCALE * 3.0f;
+
+	const float sqrt2 = sqrt(2.0f);
+	float unitDirections[][3] = { {0.0f, 1.0f, 0.0f }, {sqrt2, sqrt2, 0.0f }, { 1.0f, 0.0f, 0.0f }, { sqrt2, -sqrt2, 0.0f }, { 0.0f, -1.0f, 0.0f }, { -sqrt2, -sqrt2, 0.0f }, { -1.0f, 0.0f, 0.0f }, { -sqrt2, sqrt2, 0.0f } };
+	for (float* direction : unitDirections) {
+		float coordinates[3] = { n.getScaledX(), n.getScaledY(), 0.0f };
+		Ray coverRay(coordinates, direction);
+		if (ShotStrategy::getFirstBuilding(coverRay, -0.5f, distanceChecked) != NULL) {
+			multiplier -= .125f;
+		}
+	}
 
 	return multiplier;
 }
@@ -205,3 +241,5 @@ GraphFunctionContainer::GraphFunctionContainer (float worldSize, int currentStat
 	this->player = player;
 
 }
+
+std::unordered_map <int, double> GraphFunctionContainer::coverValues;

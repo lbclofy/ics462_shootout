@@ -117,7 +117,7 @@ class RobotPlayer : public LocalPlayer {
 	float shotAngle; // azimuth of incoming shot
 	float targetdistance; // distance to target
 	float targetdir[3]; // direction to target
-	int currentStatus;
+	int currentStatus; //number indicating what the tank will do at the moment
 };
 
 #endif // BZF_ROBOT_PLAYER_H

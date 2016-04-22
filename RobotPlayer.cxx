@@ -19,6 +19,8 @@
 //#define TRACE3
 //#define TRACE_PLANNER
 //#define TRACE_DECTREE
+#define ASTAR_TRACE
+//#define SHOT_TRACE
 
 // interface header
 #include "RobotPlayer.h"
@@ -51,7 +53,8 @@ RobotPlayer::RobotPlayer(const PlayerId& _id, const char* _name,
 				target(NULL),
 				pathIndex(-1),
 				timerForShot(0.0f),
-				drivingForward(true)
+				drivingForward(true),
+				currentStatus(OFFENSE)
 {
   gettingSound = false;
   server       = _server;
@@ -303,36 +306,39 @@ void			RobotPlayer::followPath(float dt)
       distance = hypotf(path[0], path[1]);
       float tankRadius = BZDBCache::tankRadius;
 	  // find how long it will take to get to next path segment
-	  if (distance <= dt * tankSpeed + 1.0f * BZDBCache::tankRadius)
+	  if (distance <= dt * tankSpeed + 2.0f * BZDBCache::tankRadius && pathIndex != 0)
 		  pathIndex--; 
 
-	  float cohesion[3];
-	  float cohesionV[2], separationV[3];
-	  int numCohesionNeighbors = computeCenterOfMass(BZDBCache::worldSize, cohesion);
-	  // uncomment out one of the following 2 code sections to get either
-	  // lines 1-7: repulsion from center of mass of neighbors
-	  // line 8: inverse square law repulsion from each neighbor
-	  //float separation[3];
-	  //int numSeparationNeighbors = computeCenterOfMass(BZDBCache::tankRadius * 5.0f, separation);
-	  //if (numSeparationNeighbors) {
-		 // separationV[0] = position[0] - separation[0];
-		 // separationV[1] = position[1] - separation[1];
+	  //float cohesion[3];
+	  //float cohesionV[2], separationV[3];
+	  //int numCohesionNeighbors = computeCenterOfMass(BZDBCache::worldSize, cohesion);
+	  //// uncomment out one of the following 2 code sections to get either
+	  //// lines 1-7: repulsion from center of mass of neighbors
+	  //// line 8: inverse square law repulsion from each neighbor
+	  ////float separation[3];
+	  ////int numSeparationNeighbors = computeCenterOfMass(BZDBCache::tankRadius * 5.0f, separation);
+	  ////if (numSeparationNeighbors) {
+		 //// separationV[0] = position[0] - separation[0];
+		 //// separationV[1] = position[1] - separation[1];
+	  ////} else
+		 //// separationV[0] = separationV[1] = 0;
+	  //int numSeparationNeighbors = computeRepulsion(BZDBCache::tankRadius * 5.0f, separationV);
+	  //float alignAzimuth;
+	  //float align[3] = {0.0f, 0.0f, 0.0f};
+	  //int numAlignNeighbors = computeAlign(BZDBCache::tankRadius * 15.0f, align, &alignAzimuth);
+	  //if (numCohesionNeighbors) {
+		 // cohesionV[0] = cohesion[0] - position[0];
+		 // cohesionV[1] = cohesion[1] - position[1];
 	  //} else
-		 // separationV[0] = separationV[1] = 0;
-	  int numSeparationNeighbors = computeRepulsion(BZDBCache::tankRadius * 5.0f, separationV);
-	  float alignAzimuth;
-	  float align[3] = {0.0f, 0.0f, 0.0f};
-	  int numAlignNeighbors = computeAlign(BZDBCache::tankRadius * 15.0f, align, &alignAzimuth);
-	  if (numCohesionNeighbors) {
-		  cohesionV[0] = cohesion[0] - position[0];
-		  cohesionV[1] = cohesion[1] - position[1];
-	  } else
-		  cohesionV[0] = cohesionV[1] = 0;
-	  v[0] = CohesionW * cohesionV[0] + SeparationW * separationV[0] + AlignW * align[0] + PathW * path[0];
-	  v[1] = CohesionW * cohesionV[1] + SeparationW * separationV[1] + AlignW * align[1] + PathW * path[1];
-	  float weightSum = CohesionW + SeparationW + AlignW + PathW;
-	  v[0] /= weightSum;
-	  v[1] /= weightSum;
+		 // cohesionV[0] = cohesionV[1] = 0;
+	  //v[0] = CohesionW * cohesionV[0] + SeparationW * separationV[0] + AlignW * align[0] + PathW * path[0];
+	  //v[1] = CohesionW * cohesionV[1] + SeparationW * separationV[1] + AlignW * align[1] + PathW * path[1];
+	  //float weightSum = CohesionW + SeparationW + AlignW + PathW;
+	  //v[0] /= weightSum;
+	  //v[1] /= weightSum;
+
+	  v[0] = path[0];
+	  v[1] = path[1];
 
       float segmentAzimuth = atan2f(v[1], v[0]);
       float azimuthDiff = segmentAzimuth - azimuth;
@@ -504,6 +510,7 @@ void			RobotPlayer::shootAndResetShotTimer(float dt)
 * Checks to see if the closest tank is within a radius
 */
 bool		RobotPlayer::isTargetClose(float dt) {
+	if (target == NULL) return false;
 	const float dist = TargetingUtils::getTargetDistance(getPosition(), target->getPosition() );
 	return fabs(dist) < BZDBCache::tankRadius * 20;
 }
@@ -536,10 +543,11 @@ void		RobotPlayer::rotateShootAndResetShotTimer(float dt) {
 			setDesiredAngVel(azimuthDiff / dt / tankAngVel);
 		}
 	}
-		
+#ifdef SHOT_TRACE
 	char buffer[128];
 	sprintf(buffer, "Need to Rotate to get shot off");
 	controlPanel->addMessage(buffer);
+#endif
 }
 
 /*
@@ -679,13 +687,18 @@ void			RobotPlayer::setTarget(const Player* _target)
   aStarSearch(getPosition(), goalPos, paths);
   clock_t stop_s = clock();
   float sum = (float)(stop_s - start_s) / CLOCKS_PER_SEC;
+#ifdef ASTAR_TRACE
   char buffer[128];
   sprintf(buffer, "\nA* search took %f seconds", sum);
   controlPanel->addMessage(buffer);
+#endif
   if (!paths.empty()) {
 	  pathGoalNode.setX(paths[0][0].getX());
 	  pathGoalNode.setY(paths[0][0].getY());
 	  pathIndex = paths[0].size()-2; // last index is start node
+  }
+  else {
+	  pathIndex = -1;
   }
 #ifdef TRACE2
   sprintf (buffer, "\nNumber of paths: %d\nPath coordinates: \n[ ", paths.size());
@@ -1054,13 +1067,13 @@ void		RobotPlayer::findHomeBase(TeamColor teamColor, float location[3])
 }
 
 /*
- * Return search radius for patrolling tank based on base location.
- * This code assumes the team base is to the far left middle on the map.
- * Radius in this case is 3 points: North, South, and East of the base at a third of the world size.
- */
+* Return search radius for patrolling tank based on base location.
+* This code assumes the team base is to the far left middle on the map.
+* Radius in this case is 3 points: North, South, and East of the base at a third of the world size.
+*/
 void RobotPlayer::findPatrolArea(TeamColor teamColor, float patrolArea[3]) {
 	//if worldSize does not reflect true size i.e. 500 is 1000x1000 then change to *2/3
-	float patrolRadius = (BZDBCache::worldSize)/3;
+	float patrolRadius = (BZDBCache::worldSize) / 3;
 	findHomeBase(teamColor, patrolArea);
 	//assuming location[0] is horizontal movement and location[1] is vertical from top-down view
 	patrolArea[0] = patrolArea[0] + patrolRadius; //horizontal to the right
@@ -1069,11 +1082,11 @@ void RobotPlayer::findPatrolArea(TeamColor teamColor, float patrolArea[3]) {
 }
 
 /*
- * Given patrolArea after calling findPatrolArea, returns a random point in the area.
- */
+* Given patrolArea after calling findPatrolArea, returns a random point in the area.
+*/
 float* RobotPlayer::findPatrolPoint(float patrolArea[3]) {
 	float patrolPoint[2];
-	patrolPoint[0] = ((float(rand()) / patrolArea[0]) * (patrolArea[0] - (BZDBCache::worldSize)/3)) + (BZDBCache::worldSize)/3;
+	patrolPoint[0] = ((float(rand()) / patrolArea[0]) * (patrolArea[0] - (BZDBCache::worldSize) / 3)) + (BZDBCache::worldSize) / 3;
 	patrolPoint[1] = ((float(rand()) / patrolArea[1]) * (patrolArea[1] - patrolArea[2])) + patrolArea[2];
 
 	return patrolPoint;
@@ -1174,7 +1187,7 @@ void		RobotPlayer::aStarSearch(const float startPos[3], const float goalPos[3],
 {
 	// Profiling observation: Using int instead of double cost provides marginal improvement (~10%)
 	GenericSearchGraphDescriptor<AStarNode,double> AStarGraph;
-	GraphFunctionContainer fun_cont(BZDBCache::worldSize, RETURNING, LocalPlayer::getMyTank());
+	GraphFunctionContainer fun_cont(BZDBCache::worldSize, /*currentStatus*/ RETURNING, LocalPlayer::getMyTank());
 	AStarGraph.func_container = &fun_cont;
 	// Set other variables
 	AStarGraph.hashTableSize = (int)pow((floor(GraphFunctionContainer::Xmin * 2) - 2), 2) + 2; //amount of Nodes in graph plus a bit of wiggle room; 
