@@ -1478,19 +1478,104 @@ void		RobotPlayer::findOpponentFlag(float location[3])
 {
 	TeamColor myTeamColor = getTeam();
 	if (!World::getWorld()->allowTeamFlags()) return;
+
+	const float* mypos = getPosition();
+	const float* basepos = World::getWorld()->getBase(getTeam(), 0);
+	int count = 0;
+	int closest1, closest2;
+
+	float flag1[3], flag2[3],flag3[3];
+	//find all enemy flags
 	for (int i = 0; i < numFlags; i++) {
 		Flag& flag = World::getWorld()->getFlag(i);
 		TeamColor flagTeamColor = flag.type->flagTeam;
 		if (flagTeamColor != NoTeam && flagTeamColor != myTeamColor) {
-			location[0] = flag.position[0];
-			location[1] = flag.position[1];
-			location[2] = flag.position[2];
+			if (count == 0) {
+				flag1[0] = flag.position[0];
+				flag1[1] = flag.position[1];
+				flag1[2] = flag.position[2];
+				count++;
+			}
+			else if (count == 1) {
+				flag2[0] = flag.position[0];
+				flag2[1] = flag.position[1];
+				flag2[2] = flag.position[2];
+				count++;
+			}
+			else if (count == 2) {
+				flag3[0] = flag.position[0];
+				flag3[1] = flag.position[1];
+				flag3[2] = flag.position[2];
+				break;
+			}
+			
 #ifdef TRACE2
 			char buffer[512];
 			sprintf (buffer, "Robot(%d) found a flag at (%f, %f, %f)",
 				getId(), location[0], location[1], location[2]);
 			controlPanel->addMessage(buffer);
 #endif
+		}
+	}
+	//find 2 closest enemy flags
+	if ((pow(flag1[0] - basepos[0],2) + pow(flag1[1] - basepos[1],2)) <=  (pow(flag2[0] - basepos[0], 2) + pow(flag2[1] - basepos[1], 2))) {
+		closest1 = 1;
+		if ((pow(flag2[0] - basepos[0], 2) + pow(flag2[1] - basepos[1], 2)) <= (pow(flag3[0] - basepos[0], 2) + pow(flag3[1] - basepos[1], 2))) {
+			closest2 = 2;
+		}
+		else {
+			closest2 = 3;
+		}
+	}
+	else {
+		closest1 = 2;
+		if ((pow(flag1[0] - basepos[0], 2) + pow(flag1[1] - basepos[1], 2)) <= (pow(flag3[0] - basepos[0], 2) + pow(flag3[1] - basepos[1], 2))) {
+			closest2 = 1;
+		}
+		else {
+			closest2 = 3;
+		}
+	}
+	//check for cloest to position
+	if ((closest1 == 1 || closest2 == 1) && (closest1 == 2 || closest2 == 2)) {
+		if ((pow(flag1[0] - mypos[0], 2) + pow(flag1[1] - mypos[1], 2)) <= (pow(flag2[0] - mypos[0], 2) + pow(flag2[1] - mypos[1], 2))) {
+			location[0] = flag1[0];
+			location[1] = flag1[1];
+			location[2] = flag1[2];
+			return;
+		}
+		else {
+			location[0] = flag2[0];
+			location[1] = flag2[1];
+			location[2] = flag2[2];
+			return;
+		}
+	}
+	else if ((closest1 == 1 || closest2 == 1) && (closest1 == 3 || closest2 == 3)) {
+		if ((pow(flag1[0] - mypos[0], 2) + pow(flag1[1] - mypos[1], 2)) <= (pow(flag3[0] - mypos[0], 2) + pow(flag3[1] - mypos[1], 2))) {
+			location[0] = flag1[0];
+			location[1] = flag1[1];
+			location[2] = flag1[2];
+			return;
+		}
+		else {
+			location[0] = flag3[0];
+			location[1] = flag3[1];
+			location[2] = flag3[2];
+			return;
+		}
+	}
+	else {
+		if ((pow(flag2[0] - mypos[0], 2) + pow(flag2[1] - mypos[1], 2)) <= (pow(flag3[0] - mypos[0], 2) + pow(flag3[1] - mypos[1], 2))) {
+			location[0] = flag2[0];
+			location[1] = flag2[1];
+			location[2] = flag2[2];
+			return;
+		}
+		else {
+			location[0] = flag3[0];
+			location[1] = flag3[1];
+			location[2] = flag3[2];
 			return;
 		}
 	}
