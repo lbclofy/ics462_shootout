@@ -69,6 +69,10 @@ class RobotPlayer : public LocalPlayer {
 	bool		RobotPlayer::isTeamFlag(float dt);
 	bool		RobotPlayer::isMyTeamFlag(float dt);
 	void		RobotPlayer::dropFlag(float dt);
+	bool		RobotPlayer::isFlagGood(float dt);
+	bool		RobotPlayer::isTargetVeryClose(float dt);
+	bool		RobotPlayer::isTargetAFlag(float dt);
+	bool		RobotPlayer::isTargetATank(float dt);
 
   private:
     void		doUpdate(float dt);
@@ -99,6 +103,8 @@ class RobotPlayer : public LocalPlayer {
 										 std::vector< std::vector< AStarNode > >& paths);
 	 std::vector< AStarNode > RobotPlayer::generateSmoothedPath(std::vector< AStarNode > orig);
 	 bool		RobotPlayer::pathIsClear(AStarNode& start, AStarNode& end);
+	 void		RobotPlayer::seekFlag();
+	 int		RobotPlayer::findClosestPartOfPath(float* position);
 
 	 static const float		CohesionW;
 	 static const float		SeparationW;
@@ -118,6 +124,7 @@ class RobotPlayer : public LocalPlayer {
 	float targetdistance; // distance to target
 	float targetdir[3]; // direction to target
 	int currentStatus; //number indicating what the tank will do at the moment
+	bool seekingFlag;
 };
 
 #endif // BZF_ROBOT_PLAYER_H

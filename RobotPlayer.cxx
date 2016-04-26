@@ -21,6 +21,7 @@
 //#define TRACE_DECTREE
 #define ASTAR_TRACE
 //#define SHOT_TRACE
+#define SEEK_FLAG_TRACE
 
 // interface header
 #include "RobotPlayer.h"
@@ -38,6 +39,8 @@
 #include "BZDBCache.h" // needed for worldSize, tankRadius
 #include <time.h>  // needed for clock_t, clock, CLOCKS_PER_SECOND
 #include "dectree.h" // needed for decision trees
+#include <algorithm>
+#include <limits>
 
 std::vector<BzfRegion*>* RobotPlayer::obstacleList = NULL;
 
@@ -54,7 +57,8 @@ RobotPlayer::RobotPlayer(const PlayerId& _id, const char* _name,
 				pathIndex(-1),
 				timerForShot(0.0f),
 				drivingForward(true),
-				currentStatus(OFFENSE)
+				currentStatus(OFFENSE),
+				seekingFlag(false)
 {
   gettingSound = false;
   server       = _server;
@@ -200,9 +204,6 @@ bool		RobotPlayer::shotComing(float dt)
 	ShotPath* shot = p->getShot(s);
 	if (!shot || shot->isExpired())
 	  continue;
-	// ignore invisible bullets completely for now (even when visible)
-	if (shot->getFlag() == Flags::InvisibleBullet)
-	  continue;
 
 	const float* shotPos = shot->getPosition();
 	if ((fabs(shotPos[2] - position[2]) > BZDBCache::tankHeight) && (shot->getFlag() != Flags::GuidedMissile))
@@ -230,7 +231,7 @@ bool		RobotPlayer::shotComing(float dt)
 void			RobotPlayer::doNothing(float dt)
 {
 #ifdef TRACE5
-	char buffer[128];
+	char buffer[512];
 	sprintf (buffer, "R%d-%d doing nothing", getTeam(), getId());
 	controlPanel->addMessage(buffer);
 #endif
@@ -258,11 +259,131 @@ void			RobotPlayer::evade(float dt)
 	    setDesiredSpeed(1.0f);
 	    setDesiredAngVel(rotation);
 #ifdef TRACE3
-	char buffer[128];
+	char buffer[512];
 	sprintf (buffer, "R%d-%d evading", getTeam(), getId());
 	controlPanel->addMessage(buffer);
 #endif
     }
+
+void			RobotPlayer::seekFlag() {
+	const float* oldPosition = getPosition();
+	float position[3];
+	position[0] = oldPosition[0];
+	position[1] = oldPosition[1];
+	position[2] = oldPosition[2];
+
+	float tankRadius = BZDBCache::tankRadius;
+
+	float genocideValue = 100.0f * tankRadius;
+	float laserValue = 30.0f * tankRadius;
+	float velocityValue = 40.0f * tankRadius;
+	float otherValue = 20.0f * tankRadius;
+
+
+#ifdef SEEK_FLAG_TRACE
+	char buffer[512];
+#endif
+
+	std::vector<Flag*> nearbyGoodFlags;
+	for (int i = 0; i < numFlags; i++) {
+		Flag& flag = World::getWorld()->getFlag(i);
+		TeamColor flagTeamColor = flag.type->flagTeam;
+		if (flagTeamColor == NoTeam && flag.status != FlagOnTank && flag.type->flagQuality == FlagGood) {
+			float acceptableDistance = 0.0f;
+			if (flag.type == Flags::Genocide) {
+				acceptableDistance = genocideValue;
+			}
+			else if (flag.type == Flags::Laser) {
+				acceptableDistance = laserValue;
+			}
+			else if (flag.type == Flags::Velocity) {
+				acceptableDistance = velocityValue;
+			}
+			else if (flag.type == Flags::Burrow || flag.type == Flags::Seer || flag.type == Flags::Jumping) {
+				acceptableDistance = 0.0f;
+			}
+			else {
+				acceptableDistance = otherValue;
+			}
+			if (hypotf(flag.position[0] - position[0], flag.position[1] - position[1]) <= acceptableDistance) {
+#ifdef SEEK_FLAG_TRACE
+				sprintf(buffer, "%s Found Candidate", getCallSign());
+				controlPanel->addMessage(buffer);
+#endif
+				nearbyGoodFlags.push_back(&World::getWorld()->getFlag(i));
+			}
+		}
+	}
+	if (!nearbyGoodFlags.empty()) {
+#ifdef SEEK_FLAG_TRACE
+		sprintf(buffer, "%s Seeking good flag", getCallSign());
+		controlPanel->addMessage(buffer);
+#endif
+		float bestValue = 0.0f; //based on flag's worth and distance
+		Flag* bestFlag = NULL;
+		for (Flag* flag : nearbyGoodFlags) {
+			float flagDistance = hypotf(flag->position[0] - position[0], flag->position[1] - position[1]);
+			if (flag->type == Flags::Genocide && bestValue < genocideValue + genocideValue - flagDistance) {
+				bestValue = genocideValue + genocideValue - flagDistance;
+				bestFlag = flag;
+			}
+			else if (flag->type == Flags::Laser && bestValue < laserValue + genocideValue - flagDistance) {
+				bestValue = laserValue + genocideValue - flagDistance;
+				bestFlag = flag;
+			}
+			else if (flag->type == Flags::Velocity && bestValue < velocityValue + genocideValue - flagDistance) {
+				bestValue = velocityValue + genocideValue - flagDistance;
+				bestFlag = flag;
+			}
+			else if (bestValue < otherValue + genocideValue - flagDistance) {
+				bestValue = otherValue + genocideValue - flagDistance;
+				bestFlag = flag;
+			}
+		}
+		if (bestValue != 0.0f && bestFlag != NULL) {
+#ifdef SEEK_FLAG_TRACE
+			sprintf(buffer, "Good Flag Found at (%f, %f), %s taking detour, current position: (%f, %f)", 
+				bestFlag->position[0], bestFlag->position[1], getCallSign(), getPosition()[0], getPosition()[1]);
+			controlPanel->addMessage(buffer);
+#endif
+			std::vector<std::vector<AStarNode>> detour;
+			aStarSearch(getPosition(), bestFlag->position, detour);
+			std::vector<std::vector<AStarNode>> pathReturn;
+			int nextIndex = std::max(0, findClosestPartOfPath(bestFlag->position) - 1);
+			float nextNode[3] = { paths[0][nextIndex].getScaledX(), paths[0][nextIndex].getScaledY(), 0.0f };
+			aStarSearch(bestFlag->position, nextNode, pathReturn);
+
+			if (!detour.empty() && !pathReturn.empty()) {
+
+				for (int i = pathReturn[0].size() - 2; i >= 0; i--) {
+					detour[0].insert(detour[0].begin(), pathReturn[0][i]);
+				}
+				for (int i = detour[0].size() - 2; i >= 0; i--) {
+					paths[0].insert(paths[0].begin() + nextIndex, detour[0][i]);
+				}
+
+				int indexAdjustment = std::max(0, (int) detour[0].size() - 2);
+
+				pathIndex = nextIndex + indexAdjustment;
+				seekingFlag = true;
+			}
+		}
+	}
+}
+
+int		RobotPlayer::findClosestPartOfPath(float* position) {
+	int bestIndex = 0;
+	float bestDistance = std::numeric_limits<float>::infinity();
+	for (int i = 0; i < paths[0].size(); i++) {
+		AStarNode n = paths[0][i];
+		float nodeDistance = hypotf(n.getScaledX() - position[0], n.getScaledY() - position[1]);
+		if (nodeDistance < bestDistance) {
+			bestDistance = nodeDistance;
+			bestIndex = i;
+		}
+	}
+	return bestIndex;
+}
 
 /*
  * follow A* search path
@@ -282,7 +403,7 @@ void			RobotPlayer::followPath(float dt)
 	
 	TeamColor myteam = getTeam();
 #ifdef TRACE2
-	char buffer[128];
+	char buffer[512];
 	sprintf (buffer, "Robot(%d)'s pathIndex=%d, paths[0].size()=%d",
 		getId(), pathIndex, (int)paths[0].size());
 	controlPanel->addMessage(buffer);
@@ -291,10 +412,16 @@ void			RobotPlayer::followPath(float dt)
       float distance;
       float v[2];
       float endPoint[3];
+
+	  if (!seekingFlag && World::getWorld()->allowTeamFlags() && getFlag() == Flags::Null
+		  && hypotf(paths[0][0].getScaledX() - position[0], paths[0][0].getScaledY() - position[1]) > 20.0f * BZDBCache::tankRadius) {
+		  seekFlag();
+	  }
+
 	  endPoint[0] = paths[0][pathIndex].getScaledX();
 	  endPoint[1] = paths[0][pathIndex].getScaledY();
 #ifdef TRACE2
-	  char buffer[128];
+	  char buffer[512];
 	  sprintf (buffer, "Robot(%d) at (%f, %f) heading toward (%f, %f)",
 		  getId(),position[0], position[1], endPoint[0], endPoint[1]);
 	  controlPanel->addMessage(buffer);
@@ -306,8 +433,10 @@ void			RobotPlayer::followPath(float dt)
       distance = hypotf(path[0], path[1]);
       float tankRadius = BZDBCache::tankRadius;
 	  // find how long it will take to get to next path segment
-	  if (distance <= dt * tankSpeed + 2.0f * BZDBCache::tankRadius && pathIndex != 0)
+	  if (seekingFlag && distance <= /*dt * tankSpeed +*/ 0.5f * BZDBCache::tankRadius && pathIndex != 0)
 		  pathIndex--; 
+	  if (!seekingFlag && distance <= dt * tankSpeed + 2.0f * BZDBCache::tankRadius && pathIndex != 0)
+		  pathIndex--;
 
 	  //float cohesion[3];
 	  //float cohesionV[2], separationV[3];
@@ -485,7 +614,7 @@ void			RobotPlayer::setShortShotTimer(float dt)
 {
 	timerForShot = 0.1f;
 #ifdef TRACE5
-	char buffer[128];
+	char buffer[512];
 	sprintf (buffer, "R%d-%d set short shot timer", getTeam(), getId());
 	controlPanel->addMessage(buffer);
 #endif
@@ -500,7 +629,7 @@ void			RobotPlayer::shootAndResetShotTimer(float dt)
 			// separate shot by 0.2 - 0.8 sec (experimental value)
 			timerForShot = float(bzfrand()) * 0.6f + 0.2f;
 #ifdef TRACE5
-	char buffer[128];
+	char buffer[512];
 	sprintf (buffer, "R%d-%d shoot and reset shot timer", getTeam(), getId());
 	controlPanel->addMessage(buffer);
 #endif
@@ -544,7 +673,7 @@ void		RobotPlayer::rotateShootAndResetShotTimer(float dt) {
 		}
 	}
 #ifdef SHOT_TRACE
-	char buffer[128];
+	char buffer[512];
 	sprintf(buffer, "Need to Rotate to get shot off");
 	controlPanel->addMessage(buffer);
 #endif
@@ -556,7 +685,11 @@ void		RobotPlayer::rotateShootAndResetShotTimer(float dt) {
 bool		RobotPlayer::isHoldingFlag(float dt)
 {
 	FlagType* myFlag = getFlag();
-	return (myFlag && (myFlag != Flags::Null));
+	bool holdingFlag = (myFlag && (myFlag != Flags::Null));
+	if (holdingFlag) {
+		seekingFlag = false;
+	}
+	return holdingFlag;
 }
 
 /*
@@ -591,11 +724,51 @@ bool		RobotPlayer::isMyTeamFlag(float dt)
 void			RobotPlayer::dropFlag(float dt)
 {
 	serverLink->sendDropFlag(getId(), getPosition());
+	seekingFlag = false;
 #ifdef TRACE5
-	char buffer[128];
+	char buffer[512];
 	sprintf (buffer, "R%d-%d following A* path", getTeam(), getId());
 	controlPanel->addMessage(buffer);
 #endif
+}
+
+bool			RobotPlayer::isFlagGood(float dt) {
+	return getFlag()->flagQuality == FlagGood;
+}
+
+bool			RobotPlayer::isTargetVeryClose(float dt) {
+	if (!paths.empty() && !paths[0].empty()) {
+		float distanceToTarget = hypotf(paths[0][0].getScaledX() - getPosition()[0], paths[0][0].getScaledY() - getPosition()[1]);
+		if (distanceToTarget <= 1.0 * BZDBCache::tankRadius) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool			RobotPlayer::isTargetAFlag(float dt) {
+	for (int i = 0; i < numFlags; i++) {
+		Flag& flag = World::getWorld()->getFlag(i);
+		TeamColor flagTeamColor = flag.type->flagTeam;
+		if (flagTeamColor != NoTeam && flag.type->flagTeam != getTeam()
+			&& hypotf(paths[0][0].getScaledX() - flag.position[0], paths[0][0].getScaledY() - flag.position[1]) <= 2.0 * BZDBCache::tankRadius) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool			RobotPlayer::isTargetATank(float dt) {
+	for (int i = 0; i < numFlags; i++) {
+		Flag& flag = World::getWorld()->getFlag(i);
+		TeamColor flagTeamColor = flag.type->flagTeam;
+		if (flagTeamColor != NoTeam && flag.type->flagTeam != getTeam()
+			&& hypotf(paths[0][0].getScaledX() - flag.position[0], paths[0][0].getScaledY() - flag.position[1]) <= 2.0 * BZDBCache::tankRadius
+			&& flag.status == FlagOnTank ) {
+			return true;
+		}
+	}
+	return false;
 }
 
 void				RobotPlayer::doUpdateMotion(float dt)
@@ -611,6 +784,8 @@ void			RobotPlayer::explodeTank()
   target = NULL;
   path.clear();
   paths.clear();
+  pathIndex = -1;
+  seekingFlag = false;
 }
 
 void			RobotPlayer::restart(const float* pos, float _azimuth)
@@ -621,6 +796,7 @@ void			RobotPlayer::restart(const float* pos, float _azimuth)
   paths.clear();
   target = NULL;
   pathIndex = -1;
+  seekingFlag = false;
 
 }
 
@@ -688,7 +864,7 @@ void			RobotPlayer::setTarget(const Player* _target)
   clock_t stop_s = clock();
   float sum = (float)(stop_s - start_s) / CLOCKS_PER_SEC;
 #ifdef ASTAR_TRACE
-  char buffer[128];
+  char buffer[512];
   sprintf(buffer, "\nA* search took %f seconds", sum);
   controlPanel->addMessage(buffer);
 #endif
@@ -719,7 +895,7 @@ void			RobotPlayer::setTarget(const Player* _target)
   if (!headRegion || !tailRegion) {
     // if can't reach target then forget it
 #ifdef TRACE2
-	  char buffer[128];
+	  char buffer[512];
 	  sprintf (buffer, "setTarget cannot find path between Regions head=%d and tail=%d",
 		  (int)headRegion, (int)tailRegion);
 	  controlPanel->addMessage(buffer);
@@ -848,7 +1024,7 @@ int		RobotPlayer::computeCenterOfMass(float neighborhoodSize, float cm[3])
 	int numTeammates = 0;
 	TeamColor myTeam = getTeam();
 #ifdef TRACE
-	char buffer[128];
+	char buffer[512];
 	sprintf (buffer, "my (id=%d) team color is %d", getId(), myTeam);
 	controlPanel->addMessage(buffer);
 	sprintf (buffer, "curMaxPlayers() is  %d", World::getWorld()->getCurMaxPlayers());
@@ -915,7 +1091,7 @@ int		RobotPlayer::computeRepulsion(float neighborhoodSize, float repulse[3])
 	int numTeammates = 0;
 	TeamColor myTeam = getTeam();
 #ifdef TRACE
-	char buffer[128];
+	char buffer[512];
 	sprintf (buffer, "my (id=%d) team color is %d", getId(), myTeam);
 	controlPanel->addMessage(buffer);
 	sprintf (buffer, "curMaxPlayers() is  %d", World::getWorld()->getCurMaxPlayers());
@@ -987,7 +1163,7 @@ int		RobotPlayer::computeAlign(float neighborhoodSize,
 	TeamColor myTeam = getTeam();
 	*avAzimuth = 0;
 #ifdef TRACE
-	char buffer[128];
+	char buffer[512];
 	sprintf (buffer, "my (id=%d) team color is %d", getId(), myTeam);
 	controlPanel->addMessage(buffer);
 	sprintf (buffer, "curMaxPlayers() is  %d", World::getWorld()->getCurMaxPlayers());
@@ -1056,7 +1232,7 @@ void		RobotPlayer::findHomeBase(TeamColor teamColor, float location[3])
 	if(!world->allowTeamFlags()) return;
 	const float* baseParms = world->getBase(teamColor, 0);
 #ifdef TRACE2
-	char buffer[128];
+	char buffer[512];
 	sprintf (buffer, "Base for color %d is at (%f, %f, %f)",
 		teamColor, baseParms[0], baseParms[1], baseParms[2]);
 	controlPanel->addMessage(buffer);
@@ -1107,7 +1283,7 @@ bool		RobotPlayer::myTeamHoldingOpponentFlag(void)
 			&& flag.status == FlagOnTank) {
 			PlayerId ownerId = flag.owner;
 #ifdef TRACE2
-			char buffer[128];
+			char buffer[512];
 			sprintf (buffer, "Looking for a Player with id=%d",
 				ownerId);
 			controlPanel->addMessage(buffer);
@@ -1124,7 +1300,7 @@ bool		RobotPlayer::myTeamHoldingOpponentFlag(void)
 		}
 	}
 #ifdef TRACE2
-	char buffer[128];
+	char buffer[512];
 	sprintf (buffer, "Robot(%d)'s team is not holding a team flag",
 		getId());
 	controlPanel->addMessage(buffer);
@@ -1148,7 +1324,7 @@ void		RobotPlayer::findOpponentFlag(float location[3])
 			location[1] = flag.position[1];
 			location[2] = flag.position[2];
 #ifdef TRACE2
-			char buffer[128];
+			char buffer[512];
 			sprintf (buffer, "Robot(%d) found a flag at (%f, %f, %f)",
 				getId(), location[0], location[1], location[2]);
 			controlPanel->addMessage(buffer);
@@ -1194,6 +1370,14 @@ void		RobotPlayer::aStarSearch(const float startPos[3], const float goalPos[3],
 	AStarGraph.hashBinSizeIncreaseStep = 1; //hash function guarantees unique values
 	AStarGraph.SeedNode = AStarNode(startPos); // Start node
 	AStarGraph.TargetNode = AStarNode(goalPos); // Goal node
+
+	if (AStarGraph.SeedNode.getX() == AStarGraph.TargetNode.getX() && AStarGraph.SeedNode.getX() == AStarGraph.TargetNode.getY()) {
+		std::vector<AStarNode> singleNodePath;
+		singleNodePath.push_back(AStarNode(startPos));
+		paths.clear();
+		paths.push_back(singleNodePath);
+	}
+
 	A_star_planner<AStarNode,double> planner;
 	planner.setParams(1.0, 10); // optional.
 	planner.init(&AStarGraph);
@@ -1201,16 +1385,16 @@ void		RobotPlayer::aStarSearch(const float startPos[3], const float goalPos[3],
 	if (!paths.empty()) paths.clear();
 	paths = planner.getPlannedPaths();
 	if (paths.empty()) {
-		char buffer[128];
-		sprintf (buffer, "***RobotPlayer::aStarSearch: R%d-%d could not find a path from (%f, %f) to (%f, %f)***",
-			getTeam(), getId(), startPos[0], startPos[1], goalPos[0], goalPos[1]);
+		char buffer[512];
+		sprintf (buffer, "***RobotPlayer::aStarSearch: %s could not find a path from (%f, %f) to (%f, %f)***",
+			getCallSign(), startPos[0], startPos[1], goalPos[0], goalPos[1]);
 		controlPanel->addMessage(buffer);
 	}
 	else {
 		paths[0] = generateSmoothedPath(paths[0]);
 	}
 #ifdef TRACE_PLANNER
-	  char buffer[128];
+	  char buffer[512];
 	  sprintf (buffer, "R%d-%d planning from (%f, %f) to (%f, %f) with plan size %d",
 		  getTeam(), getId(), startPos[0], startPos[1], goalPos[0], goalPos[1], paths[0].size());
 	  controlPanel->addMessage(buffer);

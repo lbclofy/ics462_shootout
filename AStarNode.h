@@ -65,7 +65,6 @@ public:
 
 private:
 
-	void generateCost();
 	double badFlagInfluence(std::vector<Flag*> flagList, AStarNode n);
 	double enemyInfluence(std::vector<Player*> enemyList, AStarNode n, float maxAOI, float minAOI);
 	double coverInfluence(AStarNode n);
@@ -75,6 +74,8 @@ private:
 	int currentStatus;
 	Player* player;
 	static std::unordered_map <int, double> coverValues;
+	// fixed transition costs vector
+	std::vector<double> ConstCostVector;
 
 
 

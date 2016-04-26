@@ -145,11 +145,27 @@ namespace aicore
 		
 		doUpdateDropFlagDecisions[3].decFuncPtr = &RobotPlayer::isTeamFlag;
 		doUpdateDropFlagDecisions[3].trueBranch = &doUpdateDropFlagDecisions[4];
-		doUpdateDropFlagDecisions[3].falseBranch = &doUpdateDropFlagActions[1];
+		doUpdateDropFlagDecisions[3].falseBranch = &doUpdateDropFlagDecisions[5];
 		
 		doUpdateDropFlagDecisions[4].decFuncPtr = &RobotPlayer::isMyTeamFlag;
 		doUpdateDropFlagDecisions[4].trueBranch = &doUpdateDropFlagActions[1];
 		doUpdateDropFlagDecisions[4].falseBranch = &doUpdateDropFlagActions[0];
+
+		doUpdateDropFlagDecisions[5].decFuncPtr = &RobotPlayer::isFlagGood;
+		doUpdateDropFlagDecisions[5].trueBranch = &doUpdateDropFlagDecisions[6];
+		doUpdateDropFlagDecisions[5].falseBranch = &doUpdateDropFlagActions[1];
+
+		doUpdateDropFlagDecisions[6].decFuncPtr = &RobotPlayer::isTargetVeryClose;
+		doUpdateDropFlagDecisions[6].trueBranch = &doUpdateDropFlagDecisions[7];
+		doUpdateDropFlagDecisions[6].falseBranch = &doUpdateDropFlagActions[0];
+
+		doUpdateDropFlagDecisions[7].decFuncPtr = &RobotPlayer::isTargetAFlag;
+		doUpdateDropFlagDecisions[7].trueBranch = &doUpdateDropFlagDecisions[8];
+		doUpdateDropFlagDecisions[7].falseBranch = &doUpdateDropFlagActions[0];
+
+		doUpdateDropFlagDecisions[8].decFuncPtr = &RobotPlayer::isTargetATank;
+		doUpdateDropFlagDecisions[8].trueBranch = &doUpdateDropFlagActions[0];
+		doUpdateDropFlagDecisions[8].falseBranch = &doUpdateDropFlagActions[1];
 
 		doUpdateDropFlagActions[0].actFuncPtr = &RobotPlayer::doNothing;
 		doUpdateDropFlagActions[1].actFuncPtr = &RobotPlayer::dropFlag;
@@ -159,7 +175,7 @@ namespace aicore
 	ActionPtr DecisionTrees::doUpdateMotionActions[3];
 	DecisionPtr DecisionTrees::doUpdateShootingDecisions[10];
 	ActionPtr DecisionTrees::doUpdateShootingActions[4];
-	DecisionPtr DecisionTrees::doUpdateDropFlagDecisions[5];
+	DecisionPtr DecisionTrees::doUpdateDropFlagDecisions[9];
 	ActionPtr DecisionTrees::doUpdateDropFlagActions[2];
 
 }; // end of namespace

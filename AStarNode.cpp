@@ -26,17 +26,20 @@ AStarNode::AStarNode(const float location[3])
 {
 	x = GraphFunctionContainer::convertCoordinate(location[0]);
 	y = GraphFunctionContainer::convertCoordinate(location[1]);
+	int tempX = x;
+	int tempY = y;
 	if (AStarNode::isAccessible(x, y)) return;
-	for (int a=-1; a<=1; a++)
-		for (int b=-1; b<=1; b++) {
-			if (a==0 && b==0) continue;
-			x += a;
-			y += b;
+	for (int a = -1; a <= 1; a++) {
+		for (int b = -1; b <= 1; b++) {
+			if (a == 0 && b == 0) continue;
+			x = tempX + a;
+			y = tempY + b;
 			if (AStarNode::isAccessible(x, y)) return;
 		}
-	/*char buffer[128];
+	}
+	char buffer[512];
 	sprintf (buffer, "***AStarNode: could not find any isAccessible node for (%f, %f, %f)***", location[0], location[1], location[2]);
-	controlPanel->addMessage(buffer);*/
+	controlPanel->addMessage(buffer);
 }
 AStarNode::AStarNode(int xi, int yi)
 {
@@ -121,7 +124,7 @@ void GraphFunctionContainer::getSuccessors(AStarNode& n, std::vector<AStarNode>*
 			cost *= coverInfluence(tn);
 			costVector.push_back(cost);
 		}
-	*c = costVector; // Using the fixed cost vector
+	*c = costVector; 
 
 }
 
@@ -227,10 +230,6 @@ double GraphFunctionContainer::getHeuristics(AStarNode& n1, AStarNode& n2)
 	return hypot((double) n2.getX() - n1.getX(), (double) n2.getY() - n1.getY());
 }
 
-void GraphFunctionContainer::generateCost() {
-	
-}
-
 // -------------------------------
 // constructors
 GraphFunctionContainer::GraphFunctionContainer (float worldSize, int currentStatus, Player* player)
@@ -239,6 +238,13 @@ GraphFunctionContainer::GraphFunctionContainer (float worldSize, int currentStat
 	Xmin = -size; Xmax = size; Ymin = -size; Ymax = size;
 	this->currentStatus = currentStatus;
 	this->player = player;
+
+	// Defining the fixed transition costs
+	double SQRT2 = sqrt(2.0);
+	ConstCostVector.push_back(SQRT2); ConstCostVector.push_back(1.0);
+	ConstCostVector.push_back(SQRT2); ConstCostVector.push_back(1.0);
+	ConstCostVector.push_back(1.0); ConstCostVector.push_back(SQRT2);
+	ConstCostVector.push_back(1.0); ConstCostVector.push_back(SQRT2);
 
 }
 
