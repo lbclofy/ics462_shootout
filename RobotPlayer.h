@@ -62,6 +62,11 @@ class RobotPlayer : public LocalPlayer {
 	void		RobotPlayer::shootAndResetShotTimer(float dt);
 	void		RobotPlayer::rotateShootAndResetShotTimer(float dt);
 
+	bool		checkPursuit();
+	bool		checkReturnFlag();
+	bool		checkHoldingOwnFlag();
+	bool		checkToBase();
+
 	bool isTargetClose(float dt);
 
 	bool		RobotPlayer::isHoldingFlag(float dt);

@@ -840,6 +840,100 @@ const Player*		RobotPlayer::getTarget() const
   return target;
 }
 
+bool				RobotPlayer::checkPursuit()
+{
+	TeamColor myTeamColor = getTeam();
+	if (!World::getWorld()->allowTeamFlags()) return false;
+	for (int i = 0; i < numFlags; i++) {
+		Flag& flag = World::getWorld()->getFlag(i);
+		TeamColor flagTeamColor = flag.type->flagTeam;
+		if (flagTeamColor == myTeamColor) {
+			for (int j = 0; j < World::getWorld()->getCurMaxPlayers(); j++) {
+				Player* p = World::getWorld()->getPlayer(j);
+				if (p) {
+					if (p->getId() == flag.owner && p->getId() != getId() && flag.status == FlagOnTank) {
+
+						return true;
+					}
+				}
+			}
+		}
+	}
+	return false;
+}
+
+bool				RobotPlayer::checkReturnFlag()
+{
+	TeamColor myTeamColor = getTeam();
+	if (!World::getWorld()->allowTeamFlags()) return false;
+	for (int i = 0; i < numFlags; i++) {
+		Flag& flag = World::getWorld()->getFlag(i);
+		TeamColor flagTeamColor = flag.type->flagTeam;
+		if (flagTeamColor == myTeamColor) {
+			const float* myBase = World::getWorld()->getBase(getTeam(), 0);
+			const float* flagPos = flag.position;
+			float tankRadius = (BZDBCache::tankRadius * 2);
+			if (flag.status == FlagOnGround && (abs(myBase[0] - flagPos[0]) > tankRadius) || (abs(myBase[1] - flagPos[1]) > tankRadius) || (abs(myBase[2] - flagPos[2]) > tankRadius)) {
+				//char buffer[128];
+				//sprintf(buffer, "Robot(%d) Returning flag", getId());
+				//controlPanel->addMessage(buffer);
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool				RobotPlayer::checkHoldingOwnFlag()
+{
+	TeamColor myTeamColor = getTeam();
+	if (!World::getWorld()->allowTeamFlags()) return false;
+	for (int i = 0; i < numFlags; i++) {
+		Flag& flag = World::getWorld()->getFlag(i);
+		TeamColor flagTeamColor = flag.type->flagTeam;
+		if (flagTeamColor == myTeamColor) {
+			if (flag.owner == getId() && flag.status == FlagOnTank) {
+				//char buffer[128];
+				//sprintf(buffer, "Robot(%d) Going to own base", getId());
+				//controlPanel->addMessage(buffer);
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool				RobotPlayer::checkToBase()
+{
+	TeamColor myTeamColor = getTeam();
+	if (!World::getWorld()->allowTeamFlags()) return false;
+	for (int i = 0; i < numFlags; i++) {
+		Flag& flag = World::getWorld()->getFlag(i);
+		TeamColor flagTeamColor = flag.type->flagTeam;
+
+		if (flagTeamColor == myTeamColor) {
+			for (int j = 0; j < World::getWorld()->getCurMaxPlayers(); j++) {
+				Player* p = World::getWorld()->getPlayer(j);
+				if (p) {
+					if (p->getId() == flag.owner && p->getId() != getId() && flag.status == FlagOnTank) {
+						float* flagpos = flag.position;
+						const float* mypos = getPosition();
+						const float* basepos = World::getWorld()->getBase(p->getTeam(), 0);
+						if (pow((mypos[0] - basepos[0]), 2) + pow((mypos[1] - basepos[1]), 2) > pow((flagpos[0] - basepos[0]), 2) + pow((flagpos[1] - basepos[1]), 2)) {
+							char buffer[128];
+							sprintf(buffer, "Robot(%d) cuttin off base rought", getId());
+							controlPanel->addMessage(buffer);
+							return true;
+						}
+
+					}
+				}
+			}
+		}
+	}
+	return false;
+}
+
 void			RobotPlayer::setTarget(const Player* _target)
 {
   //static int mailbox = 0;
@@ -850,10 +944,76 @@ void			RobotPlayer::setTarget(const Player* _target)
 
   TeamColor myteam = getTeam();
   float goalPos[3];
-  if (myTeamHoldingOpponentFlag())
+  if (checkToBase()) {
+	  TeamColor myTeamColor = getTeam();
+	  for (int i = 0; i < numFlags; i++) {
+		  Flag& flag = World::getWorld()->getFlag(i);
+		  TeamColor flagTeamColor = flag.type->flagTeam;
+
+		  if (flagTeamColor == myTeamColor) {
+			  for (int j = 0; j < World::getWorld()->getCurMaxPlayers(); j++) {
+				  Player* p = World::getWorld()->getPlayer(j);
+				  if (p) {
+					  if (p->getId() == flag.owner && p->getId() != getId() && flag.status == FlagOnTank) {
+						  const float* basepos = World::getWorld()->getBase(p->getTeam(), 0);
+						  goalPos[0] = basepos[0];
+						  goalPos[1] = basepos[1];
+						  goalPos[2] = basepos[2];
+					  }
+				  }
+			  }
+		  }
+	  }
+  }
+
+  else if (checkPursuit()) {
+	  TeamColor myTeamColor = getTeam();
+	  for (int i = 0; i < numFlags; i++) {
+		  Flag& flag = World::getWorld()->getFlag(i);
+		  TeamColor flagTeamColor = flag.type->flagTeam;
+		  if (flagTeamColor == myTeamColor) {
+			  goalPos[0] = flag.position[0];
+			  goalPos[1] = flag.position[1];
+			  goalPos[2] = flag.position[2];
+#ifdef TRACE2
+			  char buffer[128];
+			  sprintf(buffer, "Robot(%d) found a flag at (%f, %f, %f)",
+				  getId(), location[0], location[1], location[2]);
+			  controlPanel->addMessage(buffer);
+#endif
+		  }
+	  }
+  }
+
+  else if (checkHoldingOwnFlag() && checkReturnFlag()) {
 	  findHomeBase(myteam, goalPos);
-  else
+  }
+
+  else if (checkReturnFlag()) {
+	  TeamColor myTeamColor = getTeam();
+	  for (int i = 0; i < numFlags; i++) {
+		  Flag& flag = World::getWorld()->getFlag(i);
+		  TeamColor flagTeamColor = flag.type->flagTeam;
+		  if (flagTeamColor == myTeamColor) {
+			  goalPos[0] = flag.position[0];
+			  goalPos[1] = flag.position[1];
+			  goalPos[2] = flag.position[2];
+#ifdef TRACE2
+			  char buffer[128];
+			  sprintf(buffer, "Robot(%d) found a flag at (%f, %f, %f)",
+				  getId(), location[0], location[1], location[2]);
+			  controlPanel->addMessage(buffer);
+#endif
+		  }
+	  }
+  }
+
+  else if (myTeamHoldingOpponentFlag()) {
+	  findHomeBase(myteam, goalPos);
+  }
+  else {
 	  findOpponentFlag(goalPos);
+  }
 
   AStarNode goalNode(goalPos);
   if (!paths.empty() && goalNode == pathGoalNode)
