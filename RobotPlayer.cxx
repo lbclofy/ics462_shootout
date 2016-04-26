@@ -716,7 +716,9 @@ bool		RobotPlayer::isTeamFlag(float dt)
 bool		RobotPlayer::isMyTeamFlag(float dt)
 {
 	FlagType* myFlag = getFlag();
-	return (myFlag->flagTeam == getTeam());
+	if (myFlag->flagTeam == getTeam() && !checkReturnFlag())
+		return true;
+	return false;
 }
 /*
  * Drop the flag that the robot tank is carrying
