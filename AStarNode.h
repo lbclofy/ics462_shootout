@@ -11,10 +11,12 @@
 #include <unordered_map>
 
 #define SCALE	BZDBCache::tankRadius
-#define OFFENSE 0
-#define PATROL 1
-#define PURSUIT 2
-#define RETURNING 3
+#define UNDEFINED 0
+#define OFFENSE 1
+#define OFFENSIVE_PURSUIT 2
+#define PATROL 3
+#define PURSUIT 4
+#define RETURN 5
 
 // A node of the A* search graph
 class AStarNode

@@ -110,6 +110,14 @@ class RobotPlayer : public LocalPlayer {
 	 bool		RobotPlayer::pathIsClear(AStarNode& start, AStarNode& end);
 	 void		RobotPlayer::seekFlag();
 	 int		RobotPlayer::findClosestPartOfPath(float* position);
+	 void		RobotPlayer::determineStatusAndGoal(float* goalPos);
+	 bool		RobotPlayer::isClosestToOwnFlag();
+	 bool		RobotPlayer::flagIsInBase();
+	 bool		RobotPlayer::flagIsStolen();
+	 bool		RobotPlayer::oneOfTwoClosestToOwnFlag();
+	 bool		RobotPlayer::isBestInterceptCandidate();
+	 void		RobotPlayer::findWallNextToBase(float* goal);
+	 bool		RobotPlayer::inCorrectBaseSpot();
 
 	 static const float		CohesionW;
 	 static const float		SeparationW;

@@ -5,7 +5,7 @@
 #include "World.h"
 #include "playing.h" // needed for controlPanel
 
-//#define BAD_FLAG_TRACE
+#define BAD_FLAG_TRACE
 
 int GraphFunctionContainer::Xmin, GraphFunctionContainer::Xmax;
 int GraphFunctionContainer::Ymin, GraphFunctionContainer::Ymax;
@@ -83,7 +83,11 @@ void GraphFunctionContainer::getSuccessors(AStarNode& n, std::vector<AStarNode>*
 
 	float maxAreaOfInfluence = 20.0f; // maximum area of influence (in front of tank)
 	float minAreaOfInfluence = 3.0f; // minimum area of influence (not in front of tank)
+	bool avoidBadFlags = currentStatus == OFFENSE || currentStatus == PATROL || !(player->getFlag() != NULL && player->getFlag() != Flags::Null && (player->getFlag()->flagTeam != NoTeam || player->getFlag()->flagQuality == FlagGood));
+	bool avoidEnemies = currentStatus == RETURN; //only consider enemy influence if returning flag
+	bool seekCover =  currentStatus == RETURN || currentStatus == OFFENSE;
 
+	if(avoidBadFlags)
 	for (int i = 0; i < numFlags; i++) { //get all nearby flags
 		Flag* flag = &World::getWorld()->getFlag(i);
 		TeamColor flagTeamColor = flag->type->flagTeam;
@@ -93,7 +97,7 @@ void GraphFunctionContainer::getSuccessors(AStarNode& n, std::vector<AStarNode>*
 		}
 	}
 
-	if(currentStatus == RETURNING)
+	if(avoidEnemies)
 	for (int t = 0; t <= World::getWorld()->getCurMaxPlayers(); t++){ //get all nearby players
 		Player *p = 0;
 		if (t < World::getWorld()->getCurMaxPlayers())
@@ -106,6 +110,14 @@ void GraphFunctionContainer::getSuccessors(AStarNode& n, std::vector<AStarNode>*
 		}
 	}
 
+	double multiplier = 1.0;
+	if (avoidBadFlags)
+		multiplier *= badFlagInfluence(nearbyFlags, n);
+	if (avoidEnemies)
+		multiplier *= enemyInfluence(nearbyEnemies, n, maxAreaOfInfluence, minAreaOfInfluence);
+	if(seekCover)
+		multiplier *= coverInfluence(n);
+
 	// This function needn't account for obstacles or size of environment. That's done by "isAccessible"
 	AStarNode tn;
 	s->clear(); c->clear(); // Planner is supposed to clear these. Still, for safety we clear it again.
@@ -115,16 +127,17 @@ void GraphFunctionContainer::getSuccessors(AStarNode& n, std::vector<AStarNode>*
 			tn.setX(n.getX() + a);
 			tn.setY(n.getY() + b);
 			s->push_back(tn);
-
-			double cost = hypotf(a, b);
-			if(player->getFlag() != NULL && player->getFlag() != Flags::Null && (player->getFlag()->flagTeam != NoTeam || player->getFlag()->flagQuality == FlagGood))
-				cost *= badFlagInfluence(nearbyFlags, tn);
-			if (currentStatus == RETURNING) 
-				cost *= enemyInfluence(nearbyEnemies, tn, maxAreaOfInfluence, minAreaOfInfluence);
-			cost *= coverInfluence(tn);
-			costVector.push_back(cost);
+			if (avoidBadFlags || avoidEnemies || seekCover) {
+				double cost = hypotf(a, b);
+				cost *= multiplier;
+				costVector.push_back(cost);
+			}
 		}
-	*c = costVector; 
+	if (avoidBadFlags || avoidEnemies || seekCover) {
+		*c = costVector;
+	} else {
+		*c = ConstCostVector;
+	}
 
 }
 
@@ -140,7 +153,7 @@ double GraphFunctionContainer::badFlagInfluence(std::vector<Flag*> flagList, ASt
 			multiplier += 5.0 / (distance + 1.0);
 #ifdef BAD_FLAG_TRACE
 			char buffer[128];
-			sprintf(buffer, "Bad Flag Found at (%f, %f), multiplier is now at %d", n.getScaledX, n.getScaledY, multiplier);
+			sprintf(buffer, "Bad Flag Found at (%f, %f), multiplier is now at %d", n.getScaledX(), n.getScaledY(), multiplier);
 			controlPanel->addMessage(buffer);
 #endif
 		}

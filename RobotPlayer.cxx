@@ -22,6 +22,7 @@
 #define ASTAR_TRACE
 //#define SHOT_TRACE
 #define SEEK_FLAG_TRACE
+#define STATUS_TRACE
 
 // interface header
 #include "RobotPlayer.h"
@@ -57,7 +58,7 @@ RobotPlayer::RobotPlayer(const PlayerId& _id, const char* _name,
 				pathIndex(-1),
 				timerForShot(0.0f),
 				drivingForward(true),
-				currentStatus(OFFENSE),
+				currentStatus(UNDEFINED),
 				seekingFlag(false)
 {
   gettingSound = false;
@@ -741,18 +742,19 @@ bool			RobotPlayer::isFlagGood(float dt) {
 bool			RobotPlayer::isTargetVeryClose(float dt) {
 	if (!paths.empty() && !paths[0].empty()) {
 		float distanceToTarget = hypotf(paths[0][0].getScaledX() - getPosition()[0], paths[0][0].getScaledY() - getPosition()[1]);
-		if (distanceToTarget <= 1.0 * BZDBCache::tankRadius) {
+		if (distanceToTarget <= 2.0 * BZDBCache::tankRadius) {
 			return true;
 		}
+		return false;
 	}
-	return false;
+	return true;
 }
 
 bool			RobotPlayer::isTargetAFlag(float dt) {
 	for (int i = 0; i < numFlags; i++) {
 		Flag& flag = World::getWorld()->getFlag(i);
 		TeamColor flagTeamColor = flag.type->flagTeam;
-		if (flagTeamColor != NoTeam && flag.type->flagTeam != getTeam()
+		if (flagTeamColor != NoTeam 
 			&& hypotf(paths[0][0].getScaledX() - flag.position[0], paths[0][0].getScaledY() - flag.position[1]) <= 2.0 * BZDBCache::tankRadius) {
 			return true;
 		}
@@ -788,6 +790,7 @@ void			RobotPlayer::explodeTank()
   paths.clear();
   pathIndex = -1;
   seekingFlag = false;
+  currentStatus = UNDEFINED;
 }
 
 void			RobotPlayer::restart(const float* pos, float _azimuth)
@@ -799,6 +802,7 @@ void			RobotPlayer::restart(const float* pos, float _azimuth)
   target = NULL;
   pathIndex = -1;
   seekingFlag = false;
+  currentStatus = UNDEFINED;
 
 }
 
@@ -875,7 +879,7 @@ bool				RobotPlayer::checkReturnFlag()
 			const float* myBase = World::getWorld()->getBase(getTeam(), 0);
 			const float* flagPos = flag.position;
 			float tankRadius = (BZDBCache::tankRadius * 2);
-			if (flag.status == FlagOnGround && (abs(myBase[0] - flagPos[0]) > tankRadius) || (abs(myBase[1] - flagPos[1]) > tankRadius) || (abs(myBase[2] - flagPos[2]) > tankRadius)) {
+			if (flag.status == FlagOnGround && (abs(myBase[0] - flagPos[0]) > tankRadius) || (abs(myBase[1] - flagPos[1]) > tankRadius)) {
 				//char buffer[128];
 				//sprintf(buffer, "Robot(%d) Returning flag", getId());
 				//controlPanel->addMessage(buffer);
@@ -884,6 +888,13 @@ bool				RobotPlayer::checkReturnFlag()
 		}
 	}
 	return false;
+}
+
+bool			RobotPlayer::inCorrectBaseSpot() {
+	float correctSpot[3];
+	findWallNextToBase(correctSpot);
+	float distance = hypotf(correctSpot[0] - getPosition()[0], correctSpot[1] - getPosition()[1]);
+	return distance < BZDBCache::tankRadius;
 }
 
 bool				RobotPlayer::checkHoldingOwnFlag()
@@ -923,7 +934,7 @@ bool				RobotPlayer::checkToBase()
 						const float* basepos = World::getWorld()->getBase(p->getTeam(), 0);
 						if (pow((mypos[0] - basepos[0]), 2) + pow((mypos[1] - basepos[1]), 2) > pow((flagpos[0] - basepos[0]), 2) + pow((flagpos[1] - basepos[1]), 2)) {
 							char buffer[128];
-							sprintf(buffer, "Robot(%d) cuttin off base rought", getId());
+							sprintf(buffer, "%s cuttin off base rought", getCallSign());
 							controlPanel->addMessage(buffer);
 							return true;
 						}
@@ -931,6 +942,243 @@ bool				RobotPlayer::checkToBase()
 					}
 				}
 			}
+		}
+	}
+	return false;
+}
+
+bool			RobotPlayer::flagIsStolen() {
+	for (int i = 0; i < World::getWorld()->getCurMaxPlayers(); i++) {
+		Player* p = World::getWorld()->getPlayer(i);
+		if (p != NULL && p->getTeam() != getTeam() && p->getFlag() != NULL && p->getFlag() != Flags::Null && p->getFlag()->flagTeam == getTeam()) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool		RobotPlayer::oneOfTwoClosestToOwnFlag() {
+	TeamColor myTeamColor = getTeam();
+	if (!World::getWorld()->allowTeamFlags()) return false;
+	for (int i = 0; i < numFlags; i++) {
+		Flag& flag = World::getWorld()->getFlag(i);
+		TeamColor flagTeamColor = flag.type->flagTeam;
+		if (flagTeamColor == myTeamColor) {
+			const float* flagPos = flag.position;
+			float bestDistance = std::numeric_limits<float>::infinity();
+			float secondBestDistance = std::numeric_limits<float>::infinity();
+			for (int i2 = 0; i2 < World::getWorld()->getCurMaxPlayers(); i2++) {
+				Player* p = World::getWorld()->getPlayer(i2);
+				if (p != NULL && p->getTeam() == getTeam() &&
+					!(p->getFlag() != NULL && p->getFlag() != Flags::Null && p->getFlag()->flagTeam != NoTeam && p->getFlag()->flagTeam != getTeam())) { //does not consider enemy team flag carriers
+					float playerDistance = hypotf(flagPos[0] - p->getPosition()[0], flagPos[1] - p->getPosition()[1]);
+					if (bestDistance > playerDistance) {
+						secondBestDistance = bestDistance;
+						bestDistance = playerDistance;
+					} else if (secondBestDistance > playerDistance) {
+						secondBestDistance = playerDistance;
+					}
+				}
+			}
+
+			float ownDistance = hypotf(flagPos[0] - getPosition()[0], flagPos[1] - getPosition()[1]);
+
+			return ownDistance <= bestDistance || ownDistance <= secondBestDistance;
+		}
+	}
+	return false;
+}
+
+void		RobotPlayer::findWallNextToBase(float* goal) {
+	const float* basepos = World::getWorld()->getBase(getTeam(), 0);
+	goal[0] = basepos[0];
+	goal[1] = basepos[1];
+	goal[2] = basepos[2];
+	if (basepos[0] == 0.0f) {
+		goal[1] = BZDBCache::worldSize/2.0f - 10.0f;
+		if (basepos[1] < 0.0f) {
+			goal[1] *= -1.0f;
+		}
+	} else {
+		goal[0] = BZDBCache::worldSize/2.0f - 10.0f;
+		if (basepos[0] < 0.0f) {
+			goal[0] *= -1.0f;
+		}
+	}
+}
+
+/**
+Determines whether or not the current tank is the best candidate for intercepting the team's flag. 
+Intercepters must be closer to the enemy's base than the enemy is.
+The best candidate is the one closest to the enemy.
+*/
+bool			RobotPlayer::isBestInterceptCandidate() {
+	if (!World::getWorld()->allowTeamFlags()) return false;
+	for (int i = 0; i < World::getWorld()->getCurMaxPlayers(); i++) {
+		Player* p = World::getWorld()->getPlayer(i);
+		if (p != NULL && p->getTeam() != getTeam() && p->getFlag() != NULL && p->getFlag() != Flags::Null && p->getFlag()->flagTeam == getTeam()) {
+			const float* basepos = World::getWorld()->getBase(p->getTeam(), 0);
+			const float* flagpos = p->getPosition();
+			float enemyDistanceToBase = hypotf(basepos[0] - flagpos[0], basepos[1] - flagpos[1]);
+			float shortestDistance = std::numeric_limits<float>::infinity();
+
+			for (int i2 = 0; i2 < World::getWorld()->getCurMaxPlayers(); i2++) {
+				Player* p2 = World::getWorld()->getPlayer(i2);
+				if (p2 != NULL && p2->getTeam() == getTeam() && p2->getFlag() != NULL && 
+					!(p2->getFlag() != Flags::Null && p2->getFlag()->flagTeam != NoTeam)) { //does not include flag carriers
+					float pDistanceToBase = hypotf(basepos[0] - p2->getPosition()[0], basepos[1] - p2->getPosition()[1]);
+					if (pDistanceToBase < enemyDistanceToBase) {
+						float pDistanceToEnemy = hypotf(flagpos[0] - p2->getPosition()[0], flagpos[1] - p2->getPosition()[1]);
+						if (pDistanceToEnemy < shortestDistance) {
+							shortestDistance = pDistanceToEnemy;
+						}
+					}
+				}
+			}
+
+			float distanceToBase = hypotf(basepos[0] - getPosition()[0], basepos[1] - getPosition()[1]);
+			if (distanceToBase < enemyDistanceToBase) {
+				float distanceToEnemy = hypotf(flagpos[0] - getPosition()[0], flagpos[1] - getPosition()[1]);
+				if (distanceToEnemy <= shortestDistance) {
+					return true;
+				}
+			}
+
+			return false;
+		}
+	}
+	return false;
+}
+
+void			RobotPlayer::determineStatusAndGoal(float* goalPos) {
+	if (getFlag() != NULL && getFlag() != Flags::Null && getFlag()->flagTeam != NoTeam) { //if carrying team flag return
+		currentStatus = RETURN;
+		/*if (getFlag()->flagTeam == getTeam()) {
+			findWallNextToBase(goalPos);
+		} else {
+			findHomeBase(getTeam(), goalPos);
+		}*/
+		findHomeBase(getTeam(), goalPos);
+		return;
+	} 
+	if (flagIsInBase() && isClosestToOwnFlag()) { //if flag is in base and tank is closest, patrol
+		currentStatus = PATROL;
+		const float* basepos = World::getWorld()->getBase(getTeam(), 0);
+		float shortestDistance = std::numeric_limits<float>::infinity();
+		Player* closestPlayer = NULL;
+		for (int i2 = 0; i2 < World::getWorld()->getCurMaxPlayers(); i2++) {
+			Player* p2 = World::getWorld()->getPlayer(i2);
+			
+			if (p2 != NULL && p2->getTeam() != getTeam()) { 
+				float pDistanceToBase = hypotf(basepos[0] - p2->getPosition()[0], basepos[1] - p2->getPosition()[1]);
+				if (pDistanceToBase < (BZDBCache::worldSize / 3.0f) && pDistanceToBase < shortestDistance) {
+					closestPlayer = p2;
+					shortestDistance = pDistanceToBase;
+				}
+			}
+		}
+
+		if (closestPlayer != NULL) {
+			goalPos[0] = closestPlayer->getPosition()[0];
+			goalPos[1] = closestPlayer->getPosition()[1];
+			goalPos[2] = closestPlayer->getPosition()[2];
+			char buffer5[128];
+			sprintf(buffer5, "%s targeting player", getCallSign());
+			controlPanel->addMessage(buffer5);
+			return;
+		}
+		goalPos[0] = basepos[0];
+		goalPos[1] = basepos[1];
+		goalPos[2] = basepos[2];
+		return;
+	} 
+	if (!flagIsInBase()) { //if flag is not in base, pursue
+		if (flagIsStolen()) {
+			if (isClosestToOwnFlag() || isBestInterceptCandidate()) {
+				for (int i = 0; i < numFlags; i++) {
+					Flag& flag = World::getWorld()->getFlag(i);
+					TeamColor flagTeamColor = flag.type->flagTeam;
+					if (flagTeamColor == getTeam()) {
+						currentStatus = PURSUIT;
+						goalPos[0] = flag.position[0];
+						goalPos[1] = flag.position[1];
+						goalPos[2] = flag.position[2];
+						return;
+					}
+				}
+			} 
+		} else if(oneOfTwoClosestToOwnFlag()){
+			for (int i = 0; i < numFlags; i++) {
+				Flag& flag = World::getWorld()->getFlag(i);
+				TeamColor flagTeamColor = flag.type->flagTeam;
+				if (flagTeamColor == getTeam()) {
+					currentStatus = PURSUIT;
+					goalPos[0] = flag.position[0];
+					goalPos[1] = flag.position[1];
+					goalPos[2] = flag.position[2];
+					return;
+				}
+			}
+		}
+	}
+
+	findOpponentFlag(goalPos);
+	currentStatus = OFFENSE;
+	for (int i = 0; i < numFlags; i++) {
+		Flag& flag = World::getWorld()->getFlag(i);
+		TeamColor flagTeamColor = flag.type->flagTeam;
+		if (flagTeamColor != getTeam() && flag.position[0] == goalPos[0] && flag.position[1] == goalPos[1] && flag.status == FlagOnTank) {
+			currentStatus = OFFENSIVE_PURSUIT;
+			return;
+		}
+	}
+}
+
+bool		RobotPlayer::flagIsInBase() {
+	TeamColor myTeamColor = getTeam();
+	if (!World::getWorld()->allowTeamFlags()) return false;
+	for (int i = 0; i < numFlags; i++) {
+		Flag& flag = World::getWorld()->getFlag(i);
+		TeamColor flagTeamColor = flag.type->flagTeam;
+		if (flagTeamColor == myTeamColor) {
+			const float* myBase = World::getWorld()->getBase(getTeam(), 0);
+			const float* flagPos = flag.position;
+			float tankRadius = (BZDBCache::tankRadius * 2);
+
+			if (!(flag.status == FlagOnTank && World::getWorld()->getPlayer(flag.owner)->getTeam() != getTeam()) && hypotf(myBase[0] - flagPos[0], myBase[1] - flagPos[1]) < tankRadius * 2) {
+				//char buffer[128];
+				//sprintf(buffer, "Robot(%d) Returning flag", getId());
+				//controlPanel->addMessage(buffer);
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool			RobotPlayer::isClosestToOwnFlag() {
+	TeamColor myTeamColor = getTeam();
+	if (!World::getWorld()->allowTeamFlags()) return false;
+	for (int i = 0; i < numFlags; i++) {
+		Flag& flag = World::getWorld()->getFlag(i);
+		TeamColor flagTeamColor = flag.type->flagTeam;
+		if (flagTeamColor == myTeamColor) {
+			const float* flagPos = flag.position;
+			float bestDistance = std::numeric_limits<float>::infinity();
+			for (int i2 = 0; i2 < World::getWorld()->getCurMaxPlayers(); i2++) {
+				Player* p = World::getWorld()->getPlayer(i2);
+				if (p != NULL && p->getTeam() == getTeam() && 
+					!(p->getFlag() != NULL && p->getFlag() != Flags::Null && p->getFlag()->flagTeam != NoTeam)) { //does not consider team flag carriers
+					float playerDistance = hypotf(flagPos[0] - p->getPosition()[0], flagPos[1] - p->getPosition()[1]);
+					if (bestDistance > playerDistance) {
+						bestDistance = playerDistance;
+					}
+				}
+			}
+
+			if (hypotf(flagPos[0] - getPosition()[0], flagPos[1] - getPosition()[1]) <= bestDistance) {
+				return true;
+			}			
 		}
 	}
 	return false;
@@ -946,76 +1194,13 @@ void			RobotPlayer::setTarget(const Player* _target)
 
   TeamColor myteam = getTeam();
   float goalPos[3];
-  if (checkToBase()) {
-	  TeamColor myTeamColor = getTeam();
-	  for (int i = 0; i < numFlags; i++) {
-		  Flag& flag = World::getWorld()->getFlag(i);
-		  TeamColor flagTeamColor = flag.type->flagTeam;
 
-		  if (flagTeamColor == myTeamColor) {
-			  for (int j = 0; j < World::getWorld()->getCurMaxPlayers(); j++) {
-				  Player* p = World::getWorld()->getPlayer(j);
-				  if (p) {
-					  if (p->getId() == flag.owner && p->getId() != getId() && flag.status == FlagOnTank) {
-						  const float* basepos = World::getWorld()->getBase(p->getTeam(), 0);
-						  goalPos[0] = basepos[0];
-						  goalPos[1] = basepos[1];
-						  goalPos[2] = basepos[2];
-					  }
-				  }
-			  }
-		  }
-	  }
-  }
-
-  else if (checkPursuit()) {
-	  TeamColor myTeamColor = getTeam();
-	  for (int i = 0; i < numFlags; i++) {
-		  Flag& flag = World::getWorld()->getFlag(i);
-		  TeamColor flagTeamColor = flag.type->flagTeam;
-		  if (flagTeamColor == myTeamColor) {
-			  goalPos[0] = flag.position[0];
-			  goalPos[1] = flag.position[1];
-			  goalPos[2] = flag.position[2];
-#ifdef TRACE2
-			  char buffer[128];
-			  sprintf(buffer, "Robot(%d) found a flag at (%f, %f, %f)",
-				  getId(), location[0], location[1], location[2]);
-			  controlPanel->addMessage(buffer);
+  determineStatusAndGoal(goalPos);
+#ifdef STATUS_TRACE
+  char buffer5[128];
+  sprintf(buffer5, "%s status: %i", getCallSign(), currentStatus);
+  controlPanel->addMessage(buffer5);
 #endif
-		  }
-	  }
-  }
-
-  else if (checkHoldingOwnFlag() && checkReturnFlag()) {
-	  findHomeBase(myteam, goalPos);
-  }
-
-  else if (checkReturnFlag()) {
-	  TeamColor myTeamColor = getTeam();
-	  for (int i = 0; i < numFlags; i++) {
-		  Flag& flag = World::getWorld()->getFlag(i);
-		  TeamColor flagTeamColor = flag.type->flagTeam;
-		  if (flagTeamColor == myTeamColor) {
-			  goalPos[0] = flag.position[0];
-			  goalPos[1] = flag.position[1];
-			  goalPos[2] = flag.position[2];
-#ifdef TRACE2
-			  char buffer[128];
-			  sprintf(buffer, "Robot(%d) found a flag at (%f, %f, %f)",
-				  getId(), location[0], location[1], location[2]);
-			  controlPanel->addMessage(buffer);
-#endif
-		  }
-	  }
-  }
-
-  else if (myTeamHoldingOpponentFlag()) {
-	  findHomeBase(myteam, goalPos);
-  }
-  else {
-	  findOpponentFlag(goalPos);
-  }
 
   AStarNode goalNode(goalPos);
   if (!paths.empty() && goalNode == pathGoalNode)
@@ -1517,6 +1702,13 @@ void		RobotPlayer::findOpponentFlag(float location[3])
 #endif
 		}
 	}
+	if (count == 1) {
+		location[0] = flag1[0];
+		location[1] = flag1[1];
+		location[2] = flag1[2];
+		return;
+	}
+	
 	//find 2 closest enemy flags
 	if ((pow(flag1[0] - basepos[0],2) + pow(flag1[1] - basepos[1],2)) <=  (pow(flag2[0] - basepos[0], 2) + pow(flag2[1] - basepos[1], 2))) {
 		closest1 = 1;
@@ -1536,6 +1728,12 @@ void		RobotPlayer::findOpponentFlag(float location[3])
 			closest2 = 3;
 		}
 	}
+
+	if (count == 2) {
+		closest1 = 1;
+		closest2 = 2;
+	}
+
 	//check for cloest to position
 	if ((closest1 == 1 || closest2 == 1) && (closest1 == 2 || closest2 == 2)) {
 		if ((pow(flag1[0] - mypos[0], 2) + pow(flag1[1] - mypos[1], 2)) <= (pow(flag2[0] - mypos[0], 2) + pow(flag2[1] - mypos[1], 2))) {
@@ -1610,7 +1808,7 @@ void		RobotPlayer::aStarSearch(const float startPos[3], const float goalPos[3],
 {
 	// Profiling observation: Using int instead of double cost provides marginal improvement (~10%)
 	GenericSearchGraphDescriptor<AStarNode,double> AStarGraph;
-	GraphFunctionContainer fun_cont(BZDBCache::worldSize, /*currentStatus*/ RETURNING, LocalPlayer::getMyTank());
+	GraphFunctionContainer fun_cont(BZDBCache::worldSize, currentStatus, LocalPlayer::getMyTank());
 	AStarGraph.func_container = &fun_cont;
 	// Set other variables
 	AStarGraph.hashTableSize = (int)pow((floor(GraphFunctionContainer::Xmin * 2) - 2), 2) + 2; //amount of Nodes in graph plus a bit of wiggle room; 
